@@ -6,7 +6,8 @@ enum TokenType {
 
     // ключові слова
     Let, Const, If, Else, While, For, Print,
-    ReadInt, ReadDouble, ReadBool, ReadString,
+    ReadInt, ReadDouble, ReadBool, ReadString,Read,
+
     Func, Return,
     Switch, Case, Default,
     Break, Continue,
@@ -27,8 +28,11 @@ class Token {
     final TokenType type
     final String lexeme
     final int pos
+
     Token(TokenType type, String lexeme, int pos) {
         this.type = type; this.lexeme = lexeme; this.pos = pos
     }
-    @Override String toString() { "${type} => ${lexeme}" }
+
+    @Override
+    String toString() { "${type} => ${lexeme}" }
 }

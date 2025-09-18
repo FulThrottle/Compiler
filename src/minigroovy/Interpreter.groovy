@@ -1,14 +1,11 @@
 package minigroovy
 
 import minigroovy.ast.*
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.util.HashSet
 
 class Interpreter {
 
     static class Env {
-        final Map<String, Object> vars  = [:]
+        final Map<String, Object> vars = [:]
         final Map<String, String> types = [:]
         final Set<String> consts = new HashSet<String>()
     }
@@ -18,60 +15,99 @@ class Interpreter {
         final java.util.List<Param> params
         final String returnType
         final Stmt body
+
         FuncDef(String name, java.util.List<Param> params, String returnType, Stmt body) {
             this.name = name; this.params = params; this.returnType = returnType; this.body = body
         }
     }
 
-    private final java.util.List<Env> envStack = [ new Env() ]
+    private final java.util.List<Env> envStack = [new Env()]
     private final Map<String, FuncDef> functions = [:]
     private final BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))
     private int callDepth = 0
+
     private Env current() { envStack.get(envStack.size() - 1) }
 
-    private static class ReturnSignal extends RuntimeException { final Object value; ReturnSignal(Object v){ super(null,null,false,false); this.value=v } }
-    private static class BreakSignal  extends RuntimeException { BreakSignal(){ super(null,null,false,false) } }
-    private static class ContinueSignal extends RuntimeException { ContinueSignal(){ super(null,null,false,false) } }
+    private static class ReturnSignal extends RuntimeException {
+        final Object value;
+
+        ReturnSignal(Object v) { super(null, null, false, false); this.value = v }
+    }
+
+    private static class BreakSignal extends RuntimeException {
+        BreakSignal() { super(null, null, false, false) }
+    }
+
+    private static class ContinueSignal extends RuntimeException {
+        ContinueSignal() { super(null, null, false, false) }
+    }
 
     void run(java.util.List<Stmt> program) { program.each { exec(it) } }
 
     private void exec(Stmt s) {
         switch (s) {
-            case VarDeclStmt:   varDecl((VarDeclStmt) s);     return
+            case VarDeclStmt: varDecl((VarDeclStmt) s); return
             case ConstDeclStmt: constDecl((ConstDeclStmt) s); return
-            case FuncDeclStmt:  funcDecl((FuncDeclStmt) s);   return
-            case AssignStmt:    assign((AssignStmt) s);       return
+            case FuncDeclStmt: funcDecl((FuncDeclStmt) s); return
+            case AssignStmt: assign((AssignStmt) s); return
             case PrintStmt:
                 def v = eval(((PrintStmt) s).expr); println(valueToString(v)); return
-            case IfStmt:        doIf((IfStmt) s);             return
-            case WhileStmt:     doWhile((WhileStmt) s);       return
-            case ForStmt:       doFor((ForStmt) s);           return   // <-- нове
-            case SwitchStmt:    doSwitch((SwitchStmt) s);     return
+            case IfStmt: doIf((IfStmt) s); return
+            case WhileStmt: doWhile((WhileStmt) s); return
+            case ForStmt: doFor((ForStmt) s); return   // <-- нове
+            case SwitchStmt: doSwitch((SwitchStmt) s); return
             case BlockStmt:
                 envStack.add(new Env())
-                try { ((BlockStmt) s).statements.each { exec(it) } }
-                finally { envStack.remove(envStack.size() - 1) }
+                try {
+                    ((BlockStmt) s).statements.each { exec(it) }
+                }
+                finally {
+                    envStack.remove(envStack.size() - 1)
+                }
                 return
-            case ExprStmt:      eval(((ExprStmt) s).expr);    return
-            case ReadStmt:      doRead((ReadStmt) s);         return
+            case ExprStmt: eval(((ExprStmt) s).expr); return
+            case ReadStmt: doRead((ReadStmt) s); return
             case ReturnStmt:
                 if (callDepth <= 0) throw rt("return outside of function")
                 def val = eval(((ReturnStmt) s).expr)
                 throw new ReturnSignal(val)
-            case BreakStmt:     throw new BreakSignal()
-            case ContinueStmt:  throw new ContinueSignal()
+            case BreakStmt: throw new BreakSignal()
+            case ContinueStmt: throw new ContinueSignal()
             default: throw rt("Unknown statement: ${s?.class?.simpleName}")
         }
     }
 
-    private void varDecl(VarDeclStmt s) {
+/*    private void varDecl(VarDeclStmt s) {
         Env e = current()
         if (e.vars.containsKey(s.name)) throw rt("Variable '${s.name}' already declared in this scope")
         def v = eval(s.init)
         checkAssignableToType(v, s.typeName, "initializer of '${s.name}'")
         e.types[s.name] = s.typeName
+        e.vars[s.name] = coerceToDeclaredType(v, s.typeName)
+    }*/
+
+    private void varDecl(VarDeclStmt s) {
+        Env e = current()
+        if (e.vars.containsKey(s.name)) throw rt("Variable '${s.name}' already declared in this scope")
+
+        Object v
+        if (s.init == null) {
+            switch (s.typeName) {
+                case "int":    v = 0;     break
+                case "double": v = 0.0d;  break
+                case "bool":   v = false; break
+                case "string": v = "";    break
+                default:       v = null;  break
+            }
+        } else {
+            v = eval(s.init)
+            checkAssignableToType(v, s.typeName, "initializer of '${s.name}'")
+        }
+
+        e.types[s.name] = s.typeName
         e.vars[s.name]  = coerceToDeclaredType(v, s.typeName)
     }
+
 
     private void constDecl(ConstDeclStmt s) {
         Env e = current()
@@ -79,7 +115,7 @@ class Interpreter {
         def v = eval(s.init)
         checkAssignableToType(v, s.typeName, "initializer of const '${s.name}'")
         e.types[s.name] = s.typeName
-        e.vars[s.name]  = coerceToDeclaredType(v, s.typeName)
+        e.vars[s.name] = coerceToDeclaredType(v, s.typeName)
         e.consts.add(s.name)
     }
 
@@ -151,68 +187,145 @@ class Interpreter {
         for (CaseClause cc : s.cases) {
             def v = eval(cc.value)
             if (eq(subj, v)) {
-                try { exec(cc.body) }
-                catch (BreakSignal br) { /* вихід лише зі switch */ }
-                catch (ContinueSignal ct) { throw rt("continue used outside of loop") }
+                try {
+                    exec(cc.body)
+                }
+                catch (BreakSignal br) { /* вихід лише зі switch */
+                }
+                catch (ContinueSignal ct) {
+                    throw rt("continue used outside of loop")
+                }
                 matched = true
                 break
             }
         }
         if (!matched && s.defaultBody != null) {
-            try { exec(s.defaultBody) }
-            catch (BreakSignal br) { /* ок */ }
-            catch (ContinueSignal ct) { throw rt("continue used outside of loop") }
+            try {
+                exec(s.defaultBody)
+            }
+            catch (BreakSignal br) { /* ок */
+            }
+            catch (ContinueSignal ct) {
+                throw rt("continue used outside of loop")
+            }
         }
     }
 
     private void doRead(ReadStmt s) {
+        // 1) Пошук змінної та валідації
         int idx = findVarFrameIndex(s.varName)
         if (idx < 0) throw rt("Undeclared variable '${s.varName}'")
         Env e = envStack.get(idx)
         if (e.consts.contains(s.varName)) throw rt("Cannot read into const '${s.varName}'")
-        def declared = e.types[s.varName]
 
+        def declared = e.types[s.varName]
+        if (declared == null) throw rt("Type of variable '${s.varName}' is unknown")
+
+        // 2) Визначаємо фактичний режим читання
+        ReadStmt.Kind kind = s.kind
+        if (kind == ReadStmt.Kind.AUTO) {
+            switch (declared) {
+                case "int":    kind = ReadStmt.Kind.INT;    break
+                case "double": kind = ReadStmt.Kind.DOUBLE; break
+                case "bool":   kind = ReadStmt.Kind.BOOL;   break
+                case "string": kind = ReadStmt.Kind.STRING; break
+                default:
+                    throw rt("Unknown declared type '${declared}' for read(${s.varName})")
+            }
+        }
+
+/*
+        // 3) Підказка користувачу
         String prompt
-        switch (s.kind) {
+        switch (kind) {
             case ReadStmt.Kind.INT:    prompt = "Enter int ${s.varName}: "; break
             case ReadStmt.Kind.DOUBLE: prompt = "Enter double ${s.varName}: "; break
             case ReadStmt.Kind.BOOL:   prompt = "Enter bool ${s.varName} (true/false): "; break
             case ReadStmt.Kind.STRING: prompt = "Enter string ${s.varName}: "; break
-            default: prompt = "Enter value ${s.varName}: "
+            default:                   prompt = "Enter value ${s.varName}: "
         }
         System.out.print(prompt)
-        String line = reader.readLine()
 
+        // 4) Зчитування рядка (із захистом від I/O помилок та EOF)
+        String line
+        try {
+            line = reader.readLine()
+        } catch (IOException ioe) {
+            throw rt("I/O error while reading ${s.varName}: ${ioe.message}")
+        }
+        if (line == null) line = "" // EOF -> вважаємо порожнім введенням
+*/
+
+        // 3) Підказка користувачу (прибираємо System.out.print(prompt))
+        String prompt
+        switch (kind) {
+            case ReadStmt.Kind.INT:    prompt = "Enter int ${s.varName}:"; break
+            case ReadStmt.Kind.DOUBLE: prompt = "Enter double ${s.varName}:"; break
+            case ReadStmt.Kind.BOOL:   prompt = "Enter bool ${s.varName} (true/false):"; break
+            case ReadStmt.Kind.STRING: prompt = "Enter string ${s.varName}:"; break
+            default:                   prompt = "Enter value ${s.varName}:"
+        }
+
+// 4) Читання через Swing-діалог (НЕ з System.in)
+        String line = javax.swing.JOptionPane.showInputDialog(
+                null,
+                prompt,
+                "Input",
+                javax.swing.JOptionPane.PLAIN_MESSAGE
+        )
+        if (line == null) line = ""   // користувач натиснув Cancel
+
+        // 5) Парсинг у значення згідно з режимом
         Object value
-        switch (s.kind) {
+        switch (kind) {
             case ReadStmt.Kind.INT:
-                try { value = Integer.parseInt(line.trim()) } catch (e2) { throw rt("Invalid int input for ${s.varName}") }
+                try {
+                    value = Integer.parseInt(line.trim())
+                } catch (Exception ex) {
+                    throw rt("Invalid int input for ${s.varName}")
+                }
                 break
+
             case ReadStmt.Kind.DOUBLE:
-                try { value = Double.parseDouble(line.trim()) } catch (e2) { throw rt("Invalid double input for ${s.varName}") }
+                try {
+                    // Дружній парсинг: дозволяємо кому як десятковий роздільник
+                    String num = line.trim().replace(',', '.')
+                    value = Double.parseDouble(num)
+                } catch (Exception ex) {
+                    throw rt("Invalid double input for ${s.varName}")
+                }
                 break
+
             case ReadStmt.Kind.BOOL:
                 String t = line.trim().toLowerCase()
-                if (t == "true" || t == "1") value = true
+                if (t == "true" || t == "1")       value = true
                 else if (t == "false" || t == "0") value = false
                 else throw rt("Invalid bool input for ${s.varName}")
                 break
+
             case ReadStmt.Kind.STRING:
+                // Зберігаємо введення як є (без trim), щоб не втрачати пробіли
                 value = line
                 break
+
+            default:
+                // На всяк випадок (неповинні сюди потрапляти)
+                value = line
         }
 
+        // 6) Перевірка сумісності з оголошеним типом і приведення
         checkAssignableToType(value, declared, "read into '${s.varName}'")
         e.vars[s.varName] = coerceToDeclaredType(value, declared)
     }
 
+
     private Object eval(Expr e) {
         switch (e) {
             case LiteralExpr: return ((LiteralExpr) e).value
-            case VarExpr:     return getVarValue(((VarExpr) e).name)
-            case UnaryExpr:   return evalUnary((UnaryExpr) e)
-            case BinaryExpr:  return evalBinary((BinaryExpr) e)
-            case CallExpr:    return evalCall((CallExpr) e)
+            case VarExpr: return getVarValue(((VarExpr) e).name)
+            case UnaryExpr: return evalUnary((UnaryExpr) e)
+            case BinaryExpr: return evalBinary((BinaryExpr) e)
+            case CallExpr: return evalCall((CallExpr) e)
             default: throw rt("Unknown expression: ${e?.class?.simpleName}")
         }
     }
@@ -224,15 +337,15 @@ class Interpreter {
             throw rt("Function '${f.name}' expects ${f.params.size()} args, got ${c.args.size()}")
 
         def values = new ArrayList<Object>()
-        for (int i=0;i<c.args.size();i++) values.add(eval(c.args.get(i)))
+        for (int i = 0; i < c.args.size(); i++) values.add(eval(c.args.get(i)))
 
         Env frame = new Env()
-        for (int i=0;i<f.params.size();i++) {
+        for (int i = 0; i < f.params.size(); i++) {
             def p = f.params.get(i)
             def v = values.get(i)
-            checkAssignableToType(v, p.typeName, "argument ${i+1} of '${f.name}'")
+            checkAssignableToType(v, p.typeName, "argument ${i + 1} of '${f.name}'")
             frame.types[p.name] = p.typeName
-            frame.vars[p.name]  = coerceToDeclaredType(v, p.typeName)
+            frame.vars[p.name] = coerceToDeclaredType(v, p.typeName)
         }
 
         envStack.add(frame)
@@ -246,7 +359,7 @@ class Interpreter {
             return coerceToDeclaredType(ret, f.returnType)
         } finally {
             callDepth--
-            envStack.remove(envStack.size()-1)
+            envStack.remove(envStack.size() - 1)
         }
     }
 
@@ -256,10 +369,10 @@ class Interpreter {
             case '+': return num(v)
             case '-':
                 def n = num(v)
-                return (n instanceof Double) ? -((Double)n) : -((Integer)n)
+                return (n instanceof Double) ? -((Double) n) : -((Integer) n)
             case '!':
                 if (!(v instanceof Boolean)) throw rt("Operand of '!' must be bool")
-                return !((Boolean)v)
+                return !((Boolean) v)
             default: throw rt("Unsupported unary op '${u.op}'")
         }
     }
@@ -270,30 +383,31 @@ class Interpreter {
         switch (b.op) {
             case '&&':
                 if (!(L instanceof Boolean)) throw rt("Left operand of '&&' must be bool")
-                return ((Boolean)L) && asBool(R)
+                return ((Boolean) L) && asBool(R)
             case '||':
                 if (!(L instanceof Boolean)) throw rt("Left operand of '||' must be bool")
-                return ((Boolean)L) || asBool(R)
+                return ((Boolean) L) || asBool(R)
             case '==': return eq(L, R)
             case '!=': return !eq(L, R)
-            case '<':  return cmp(L, R)  < 0
+            case '<': return cmp(L, R) < 0
             case '<=': return cmp(L, R) <= 0
-            case '>':  return cmp(L, R)  > 0
+            case '>': return cmp(L, R) > 0
             case '>=': return cmp(L, R) >= 0
-            case '+':  return add(L, R)
-            case '-':  return sub(L, R)
-            case '*':  return mul(L, R)
-            case '/':  return div(L, R)
+            case '+': return add(L, R)
+            case '-': return sub(L, R)
+            case '*': return mul(L, R)
+            case '/': return div(L, R)
             case '**': return pow(L, R)
-            case '%':  return mod(L, R)
+            case '%': return mod(L, R)
             default: throw rt("Unsupported binary op '${b.op}'")
         }
     }
 
     private int findVarFrameIndex(String name) {
-        for (int i = envStack.size()-1; i >= 0; i--) if (envStack[i].vars.containsKey(name)) return i
+        for (int i = envStack.size() - 1; i >= 0; i--) if (envStack[i].vars.containsKey(name)) return i
         return -1
     }
+
     private Object getVarValue(String name) {
         int idx = findVarFrameIndex(name)
         if (idx < 0) throw rt("Undeclared variable '$name'")
@@ -301,7 +415,7 @@ class Interpreter {
     }
 
     private Number num(Object v) {
-        if (v instanceof Integer || v instanceof Double) return (Number)v
+        if (v instanceof Integer || v instanceof Double) return (Number) v
         throw rt("Numeric value expected, got ${typeName(v)}")
     }
 
@@ -317,9 +431,10 @@ class Interpreter {
             return String.valueOf(a instanceof String ? a : valueToString(a)) +
                     String.valueOf(b instanceof String ? b : valueToString(b))
         }
-        def (x,y) = promote2(a,b)
-        return (x instanceof Double || y instanceof Double) ? ((double)x + (double)y) : ((int)x + (int)y)
+        def (x, y) = promote2(a, b)
+        return (x instanceof Double || y instanceof Double) ? ((double) x + (double) y) : ((int) x + (int) y)
     }
+
     private Object mod(Object a, Object b) {
         def pr = promote2(a, b)
         if (pr == null) throw rt("Numeric value expected for '%'")
@@ -335,33 +450,46 @@ class Interpreter {
         }
     }
 
-    private Object sub(Object a, Object b) { def (x,y)=promote2(a,b); (x instanceof Double || y instanceof Double)?((double)x-(double)y):((int)x-(int)y) }
-    private Object mul(Object a, Object b) { def (x,y)=promote2(a,b); (x instanceof Double || y instanceof Double)?((double)x*(double)y):((int)x*(int)y) }
-    private Object div(Object a, Object b) { def (x,y)=promote2(a,b); ((double)x) / ((double)y) }
+    private Object sub(Object a, Object b) {
+        def (x, y) = promote2(a, b);
+        (x instanceof Double || y instanceof Double) ? ((double) x - (double) y) : ((int) x - (int) y)
+    }
+
+    private Object mul(Object a, Object b) {
+        def (x, y) = promote2(a, b);
+        (x instanceof Double || y instanceof Double) ? ((double) x * (double) y) : ((int) x * (int) y)
+    }
+
+    private Object div(Object a, Object b) { def (x, y) = promote2(a, b); ((double) x) / ((double) y) }
+
     private Object pow(Object a, Object b) {
         if (a instanceof Integer && b instanceof Integer) {
             int base = (Integer) a
-            int exp  = (Integer) b
+            int exp = (Integer) b
             if (exp >= 0) {
                 long res = 1, cur = base
                 int e = exp
                 while (e > 0) {
-                    if ((e & 1) == 1) { res *= cur; if (res > Integer.MAX_VALUE || res < Integer.MIN_VALUE) return Math.pow((double)base,(double)exp) }
-                    cur *= cur; if (cur > Integer.MAX_VALUE || cur < Integer.MIN_VALUE) return Math.pow((double)base,(double)exp)
+                    if ((e & 1) == 1) {
+                        res *= cur;
+                        if (res > Integer.MAX_VALUE || res < Integer.MIN_VALUE) return Math.pow((double) base, (double) exp)
+                    }
+                    cur *= cur;
+                    if (cur > Integer.MAX_VALUE || cur < Integer.MIN_VALUE) return Math.pow((double) base, (double) exp)
                     e >>= 1
                 }
-                return (int)res
+                return (int) res
             }
-            return Math.pow((double)base,(double)exp)
+            return Math.pow((double) base, (double) exp)
         }
-        def (x,y)=promote2(a,b)
-        return Math.pow(((Number)x).doubleValue(), ((Number)y).doubleValue())
+        def (x, y) = promote2(a, b)
+        return Math.pow(((Number) x).doubleValue(), ((Number) y).doubleValue())
     }
 
     private int cmp(Object a, Object b) {
         if (a instanceof String || b instanceof String) throw rt("Cannot compare non-numeric values with <,>,<=,>=")
         def (x, y) = promote2(a, b)
-        double d = ((Number)x).doubleValue() - ((Number)y).doubleValue()
+        double d = ((Number) x).doubleValue() - ((Number) y).doubleValue()
         return d < 0 ? -1 : (d > 0 ? 1 : 0)
     }
 
@@ -369,16 +497,16 @@ class Interpreter {
         if ((a instanceof Integer || a instanceof Double) &&
                 (b instanceof Integer || b instanceof Double)) {
             def (x, y) = promote2(a, b)
-            return Double.compare(((Number)x).doubleValue(), ((Number)y).doubleValue()) == 0
+            return Double.compare(((Number) x).doubleValue(), ((Number) y).doubleValue()) == 0
         }
         if ((a instanceof Boolean) && (b instanceof Boolean)) return a == b
-        if ((a instanceof String)  && (b instanceof String))  return a == b
+        if ((a instanceof String) && (b instanceof String)) return a == b
         return false
     }
 
     private boolean asBool(Object v) {
         if (!(v instanceof Boolean)) throw rt("Boolean value expected, got ${typeName(v)}")
-        return (Boolean)v
+        return (Boolean) v
     }
 
     private void checkAssignableToType(Object value, String declared, String where) {
@@ -398,30 +526,31 @@ class Interpreter {
 
     private Object coerceToDeclaredType(Object value, String declared) {
         switch (declared) {
-            case "int":    return (value instanceof Integer) ? value : ((Number)value).intValue()
+            case "int": return (value instanceof Integer) ? value : ((Number) value).intValue()
             case "double": return (value instanceof Double) ? value
-                    : (value instanceof Integer ? ((Integer)value).doubleValue() : ((Number)value).doubleValue())
-            case "bool":   return (Boolean)value
-            case "string": return (String)value
-            default:       return value
+                    : (value instanceof Integer ? ((Integer) value).doubleValue() : ((Number) value).doubleValue())
+            case "bool": return (Boolean) value
+            case "string": return (String) value
+            default: return value
         }
     }
 
     private static String valueToString(Object v) {
         if (v instanceof Double) {
-            double d = (Double)v
-            if (d == (long)d) return String.valueOf((long)d)
+            double d = (Double) v
+            if (d == (long) d) return String.valueOf((long) d)
         }
         return String.valueOf(v)
     }
 
     private static RuntimeException rt(String msg) { new RuntimeException("Runtime error: $msg") }
+
     private static String typeName(Object v) {
         if (v == null) return "null"
         if (v instanceof Integer) return "int"
-        if (v instanceof Double)  return "double"
+        if (v instanceof Double) return "double"
         if (v instanceof Boolean) return "bool"
-        if (v instanceof String)  return "string"
+        if (v instanceof String) return "string"
         return v.getClass().simpleName
     }
 }

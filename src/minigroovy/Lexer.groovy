@@ -12,6 +12,7 @@ class Lexer {
             while     : TokenType.While,
             for       : TokenType.For,
             print     : TokenType.Print,
+            read      : TokenType.Read,          // <-- ДОДАТИ
             readInt   : TokenType.ReadInt,
             readDouble: TokenType.ReadDouble,
             readBool  : TokenType.ReadBool,
@@ -53,22 +54,24 @@ class Lexer {
             case '>': return match('=' as char) ? token(TokenType.Gte, ">=") : token(TokenType.Gt, ">")
             case '&': if (match('&' as char)) return token(TokenType.AndAnd, "&&"); throw error("expected '&' after '&'")
             case '|': if (match('|' as char)) return token(TokenType.OrOr, "||"); throw error("expected '|' after '|'")
-            case '(' : return token(TokenType.LParen, "(")
-            case ')' : return token(TokenType.RParen, ")")
-            case '{' : return token(TokenType.LBrace, "{")
-            case '}' : return token(TokenType.RBrace, "}")
-            case ';' : return token(TokenType.Semicolon, ";")
-            case ':' : return token(TokenType.Colon, ":")
-            case ',' : return token(TokenType.Comma, ",")
+            case '(': return token(TokenType.LParen, "(")
+            case ')': return token(TokenType.RParen, ")")
+            case '{': return token(TokenType.LBrace, "{")
+            case '}': return token(TokenType.RBrace, "}")
+            case ';': return token(TokenType.Semicolon, ";")
+            case ':': return token(TokenType.Colon, ":")
+            case ',': return token(TokenType.Comma, ",")
             case '%': return token(TokenType.Mod, "%")
-            default  : throw error("unexpected char '${c}'")
+            default: throw error("unexpected char '${c}'")
         }
     }
 
     private void skipWSAndComments() {
         while (pos < text.length()) {
             char c = text.charAt(pos)
-            if (Character.isWhitespace(c)) { pos++; continue }
+            if (Character.isWhitespace(c)) {
+                pos++; continue
+            }
             if (c == '/' as char && pos + 1 < text.length() && text.charAt(pos + 1) == '/' as char) {
                 pos += 2; while (pos < text.length() && text.charAt(pos) != '\n' as char) pos++; continue
             }
@@ -138,5 +141,6 @@ class Lexer {
     }
 
     private Token token(TokenType t, String lex) { new Token(t, lex, pos) }
+
     private RuntimeException error(String msg) { new RuntimeException("Lexer error at pos $pos: $msg") }
 }

@@ -18,24 +18,27 @@ class Parser {
 
     private Stmt parseStmt() {
         switch (cur.type) {
-            case TokenType.LBrace:  return parseBlock()
-            case TokenType.Let:     return parseVarDecl()
-            case TokenType.Const:   return parseConstDecl()
-            case TokenType.Func:    return parseFuncDecl()
-            case TokenType.Return:  return parseReturn()
-            case TokenType.Switch:  return parseSwitch()
-            case TokenType.If:      return parseIf()
-            case TokenType.While:   return parseWhile()
-            case TokenType.For:     return parseFor()          // <-- нове
-            case TokenType.Break:   return parseBreak()
-            case TokenType.Continue:return parseContinue()
-            case TokenType.Print:   return parsePrint()
+            case TokenType.LBrace: return parseBlock()
+            case TokenType.Let: return parseVarDecl()
+            case TokenType.Const: return parseConstDecl()
+            case TokenType.Func: return parseFuncDecl()
+            case TokenType.Return: return parseReturn()
+            case TokenType.Switch: return parseSwitch()
+            case TokenType.If: return parseIf()
+            case TokenType.While: return parseWhile()
+            case TokenType.For: return parseFor()          // <-- нове
+            case TokenType.Break: return parseBreak()
+            case TokenType.Continue: return parseContinue()
+            case TokenType.Print: return parsePrint()
             case TokenType.ReadInt:
             case TokenType.ReadDouble:
             case TokenType.ReadBool:
             case TokenType.ReadString:
                 return parseRead()
-            default:                return parseExprStmt()
+            case TokenType.Read:
+                return parseRead()
+
+            default: return parseExprStmt()
         }
     }
 
@@ -47,7 +50,7 @@ class Parser {
         return new BlockStmt(list)
     }
 
-    private VarDeclStmt parseVarDecl() {
+/*    private VarDeclStmt parseVarDecl() {
         eat(TokenType.Let)
         String name = expectIdentifier("variable name")
         eat(TokenType.Colon)
@@ -56,7 +59,26 @@ class Parser {
         Expr init = parseExpression()
         eat(TokenType.Semicolon)
         return new VarDeclStmt(name, typeName, init)
+    }*/
+
+    private VarDeclStmt parseVarDecl() {
+        eat(TokenType.Let)
+        String name = expectIdentifier("variable name")
+        eat(TokenType.Colon)
+        String typeName = expectIdentifier("type name")
+
+        Expr init = null
+        if (cur.type == TokenType.Assign) {   // ініціалізатор необов’язковий
+            eat(TokenType.Assign)
+            init = parseExpression()
+        }
+        eat(TokenType.Semicolon)
+        return new VarDeclStmt(name, typeName, init)
     }
+
+
+
+
 
     // спеціальна версія для 'for (...)' — без фінальної ';'
     private VarDeclStmt parseVarDeclNoSemi() {
@@ -91,7 +113,9 @@ class Parser {
                 eat(TokenType.Colon)
                 String pType = expectIdentifier("type name")
                 params.add(new Param(pName, pType))
-                if (cur.type == TokenType.Comma) { eat(TokenType.Comma); continue }
+                if (cur.type == TokenType.Comma) {
+                    eat(TokenType.Comma); continue
+                }
                 break
             }
         }
@@ -110,7 +134,7 @@ class Parser {
     }
 
     // switch (Expr) { case Expr: Stmt ... default: Stmt }
-    private SwitchStmt parseSwitch() {
+/*    private SwitchStmt parseSwitch() {
         eat(TokenType.Switch)
         eat(TokenType.LParen)
         Expr subj = parseExpression()
@@ -134,7 +158,52 @@ class Parser {
         }
         eat(TokenType.RBrace)
         return new SwitchStmt(subj, cases, defBody)
+    }*/
+
+    // switch (Expr) { case Expr: { Stmt* } default: { Stmt* } }
+    private SwitchStmt parseSwitch() {
+        eat(TokenType.Switch)
+        eat(TokenType.LParen)
+        Expr subj = parseExpression()
+        eat(TokenType.RParen)
+        eat(TokenType.LBrace)
+
+        def cases = new ArrayList<CaseClause>()
+        Stmt defBody = null
+
+        while (cur.type == TokenType.Case) {
+            eat(TokenType.Case)
+            Expr val = parseExpression()
+            eat(TokenType.Colon)
+
+            // Збираємо БАГАТО інструкцій до наступного case/default/'}'
+            def bodyList = new ArrayList<Stmt>()
+            while (cur.type != TokenType.Case &&
+                    cur.type != TokenType.Default &&
+                    cur.type != TokenType.RBrace) {
+                bodyList.add(parseStmt())      // тут нормально розбереться і break;
+            }
+            cases.add(new CaseClause(val, new BlockStmt(bodyList)))
+        }
+
+        if (cur.type == TokenType.Default) {
+            eat(TokenType.Default)
+            eat(TokenType.Colon)
+            def bodyList = new ArrayList<Stmt>()
+            while (cur.type != TokenType.RBrace) {
+                bodyList.add(parseStmt())
+            }
+            defBody = new BlockStmt(bodyList)
+        }
+
+        eat(TokenType.RBrace)
+        return new SwitchStmt(subj, cases, defBody)
     }
+
+
+
+
+
 
     private IfStmt parseIf() {
         eat(TokenType.If)
@@ -143,7 +212,9 @@ class Parser {
         eat(TokenType.RParen)
         Stmt thenB = parseStmt()
         Stmt elseB = null
-        if (cur.type == TokenType.Else) { eat(TokenType.Else); elseB = parseStmt() }
+        if (cur.type == TokenType.Else) {
+            eat(TokenType.Else); elseB = parseStmt()
+        }
         return new IfStmt(cond, thenB, elseB)
     }
 
@@ -237,19 +308,45 @@ class Parser {
         return new PrintStmt(e)
     }
 
-    private ReadStmt parseRead() {
+/*    private ReadStmt parseRead() {
         ReadStmt.Kind k
-        if      (cur.type == TokenType.ReadInt)     { k = ReadStmt.Kind.INT;    eat(TokenType.ReadInt) }
-        else if (cur.type == TokenType.ReadDouble)  { k = ReadStmt.Kind.DOUBLE; eat(TokenType.ReadDouble) }
-        else if (cur.type == TokenType.ReadBool)    { k = ReadStmt.Kind.BOOL;   eat(TokenType.ReadBool) }
-        else                                        { k = ReadStmt.Kind.STRING; eat(TokenType.ReadString) }
+        if (cur.type == TokenType.ReadInt) {
+            k = ReadStmt.Kind.INT; eat(TokenType.ReadInt)
+        } else if (cur.type == TokenType.ReadDouble) {
+            k = ReadStmt.Kind.DOUBLE; eat(TokenType.ReadDouble)
+        } else if (cur.type == TokenType.ReadBool) {
+            k = ReadStmt.Kind.BOOL; eat(TokenType.ReadBool)
+        } else {
+            k = ReadStmt.Kind.STRING; eat(TokenType.ReadString)
+        }
 
         eat(TokenType.LParen)
         String name = expectIdentifier("variable name")
         eat(TokenType.RParen)
         eat(TokenType.Semicolon)
         return new ReadStmt(k, name)
+    }*/
+
+    private ReadStmt parseRead() {
+        ReadStmt.Kind k
+        if (cur.type == TokenType.Read) {        // нове
+            k = ReadStmt.Kind.AUTO; eat(TokenType.Read)
+        } else if (cur.type == TokenType.ReadInt) {
+            k = ReadStmt.Kind.INT; eat(TokenType.ReadInt)
+        } else if (cur.type == TokenType.ReadDouble) {
+            k = ReadStmt.Kind.DOUBLE; eat(TokenType.ReadDouble)
+        } else if (cur.type == TokenType.ReadBool) {
+            k = ReadStmt.Kind.BOOL; eat(TokenType.ReadBool)
+        } else {
+            k = ReadStmt.Kind.STRING; eat(TokenType.ReadString)
+        }
+        eat(TokenType.LParen)
+        String name = expectIdentifier("variable name")
+        eat(TokenType.RParen)
+        eat(TokenType.Semicolon)
+        return new ReadStmt(k, name)
     }
+
 
     private Stmt parseExprStmt() {
         if (cur.type == TokenType.Identifier) {
@@ -275,29 +372,44 @@ class Parser {
     // ----- вирази -----
     private Expr parseOr() {
         Expr node = parseAnd()
-        while (cur.type == TokenType.OrOr) { String op = cur.lexeme; eat(TokenType.OrOr); Expr r = parseAnd(); node = new BinaryExpr(node, op, r) }
+        while (cur.type == TokenType.OrOr) {
+            String op = cur.lexeme; eat(TokenType.OrOr); Expr r = parseAnd(); node = new BinaryExpr(node, op, r)
+        }
         return node
     }
+
     private Expr parseAnd() {
         Expr node = parseEqual()
-        while (cur.type == TokenType.AndAnd) { String op = cur.lexeme; eat(TokenType.AndAnd); Expr r = parseEqual(); node = new BinaryExpr(node, op, r) }
+        while (cur.type == TokenType.AndAnd) {
+            String op = cur.lexeme; eat(TokenType.AndAnd); Expr r = parseEqual(); node = new BinaryExpr(node, op, r)
+        }
         return node
     }
+
     private Expr parseEqual() {
         Expr node = parseRel()
-        while (cur.type in [TokenType.EqEq, TokenType.NotEq]) { String op = cur.lexeme; eat(cur.type); Expr r = parseRel(); node = new BinaryExpr(node, op, r) }
+        while (cur.type in [TokenType.EqEq, TokenType.NotEq]) {
+            String op = cur.lexeme; eat(cur.type); Expr r = parseRel(); node = new BinaryExpr(node, op, r)
+        }
         return node
     }
+
     private Expr parseRel() {
         Expr node = parseAdd()
-        while (cur.type in [TokenType.Lt, TokenType.Lte, TokenType.Gt, TokenType.Gte]) { String op = cur.lexeme; eat(cur.type); Expr r = parseAdd(); node = new BinaryExpr(node, op, r) }
+        while (cur.type in [TokenType.Lt, TokenType.Lte, TokenType.Gt, TokenType.Gte]) {
+            String op = cur.lexeme; eat(cur.type); Expr r = parseAdd(); node = new BinaryExpr(node, op, r)
+        }
         return node
     }
+
     private Expr parseAdd() {
         Expr node = parseMul()
-        while (cur.type in [TokenType.Plus, TokenType.Minus]) { String op = cur.lexeme; eat(cur.type); Expr r = parseMul(); node = new BinaryExpr(node, op, r) }
+        while (cur.type in [TokenType.Plus, TokenType.Minus]) {
+            String op = cur.lexeme; eat(cur.type); Expr r = parseMul(); node = new BinaryExpr(node, op, r)
+        }
         return node
     }
+
     private Expr parseMul() {
         Expr node = parsePow()
         while (cur.type in [TokenType.Star, TokenType.Slash, TokenType.Mod]) { // <-- додали Mod
@@ -311,11 +423,16 @@ class Parser {
 
     private Expr parsePow() {
         Expr left = parseUnary()
-        if (cur.type == TokenType.Pow) { eat(TokenType.Pow); Expr right = parsePow(); return new BinaryExpr(left, "**", right) }
+        if (cur.type == TokenType.Pow) {
+            eat(TokenType.Pow); Expr right = parsePow(); return new BinaryExpr(left, "**", right)
+        }
         return left
     }
+
     private Expr parseUnary() {
-        if (cur.type in [TokenType.Plus, TokenType.Minus, TokenType.Bang]) { String op = cur.lexeme; eat(cur.type); return new UnaryExpr(op, parseUnary()) }
+        if (cur.type in [TokenType.Plus, TokenType.Minus, TokenType.Bang]) {
+            String op = cur.lexeme; eat(cur.type); return new UnaryExpr(op, parseUnary())
+        }
         return parsePrimary()
     }
 
@@ -328,7 +445,7 @@ class Parser {
             case TokenType.StringLit:
                 String s = cur.lexeme; eat(TokenType.StringLit)
                 return new LiteralExpr(s)
-            case TokenType.True:  eat(TokenType.True);  return new LiteralExpr(true)
+            case TokenType.True: eat(TokenType.True); return new LiteralExpr(true)
             case TokenType.False: eat(TokenType.False); return new LiteralExpr(false)
             case TokenType.Identifier:
                 String name = cur.lexeme; eat(TokenType.Identifier)
@@ -350,7 +467,9 @@ class Parser {
             if (cur.type != TokenType.RParen) {
                 while (true) {
                     args.add(parseExpression())
-                    if (cur.type == TokenType.Comma) { eat(TokenType.Comma); continue }
+                    if (cur.type == TokenType.Comma) {
+                        eat(TokenType.Comma); continue
+                    }
                     break
                 }
             }
@@ -363,29 +482,44 @@ class Parser {
     // start-with ланцюжки (для ExprStmt та спец-випадків у for)
     private Expr parseOrStartingWith(Expr first) {
         Expr node = parseAndStartingWith(first)
-        while (cur.type == TokenType.OrOr) { String op = cur.lexeme; eat(TokenType.OrOr); Expr r = parseAnd(); node = new BinaryExpr(node, op, r) }
+        while (cur.type == TokenType.OrOr) {
+            String op = cur.lexeme; eat(TokenType.OrOr); Expr r = parseAnd(); node = new BinaryExpr(node, op, r)
+        }
         return node
     }
+
     private Expr parseAndStartingWith(Expr first) {
         Expr node = parseEqualStartingWith(first)
-        while (cur.type == TokenType.AndAnd) { String op = cur.lexeme; eat(TokenType.AndAnd); Expr r = parseEqual(); node = new BinaryExpr(node, op, r) }
+        while (cur.type == TokenType.AndAnd) {
+            String op = cur.lexeme; eat(TokenType.AndAnd); Expr r = parseEqual(); node = new BinaryExpr(node, op, r)
+        }
         return node
     }
+
     private Expr parseEqualStartingWith(Expr first) {
         Expr node = parseRelStartingWith(first)
-        while (cur.type in [TokenType.EqEq, TokenType.NotEq]) { String op = cur.lexeme; eat(cur.type); Expr r = parseRel(); node = new BinaryExpr(node, op, r) }
+        while (cur.type in [TokenType.EqEq, TokenType.NotEq]) {
+            String op = cur.lexeme; eat(cur.type); Expr r = parseRel(); node = new BinaryExpr(node, op, r)
+        }
         return node
     }
+
     private Expr parseRelStartingWith(Expr first) {
         Expr node = parseAddStartingWith(first)
-        while (cur.type in [TokenType.Lt, TokenType.Lte, TokenType.Gt, TokenType.Gte]) { String op = cur.lexeme; eat(cur.type); Expr r = parseAdd(); node = new BinaryExpr(node, op, r) }
+        while (cur.type in [TokenType.Lt, TokenType.Lte, TokenType.Gt, TokenType.Gte]) {
+            String op = cur.lexeme; eat(cur.type); Expr r = parseAdd(); node = new BinaryExpr(node, op, r)
+        }
         return node
     }
+
     private Expr parseAddStartingWith(Expr first) {
         Expr node = parseMulStartingWith(first)
-        while (cur.type in [TokenType.Plus, TokenType.Minus]) { String op = cur.lexeme; eat(cur.type); Expr r = parseMul(); node = new BinaryExpr(node, op, r) }
+        while (cur.type in [TokenType.Plus, TokenType.Minus]) {
+            String op = cur.lexeme; eat(cur.type); Expr r = parseMul(); node = new BinaryExpr(node, op, r)
+        }
         return node
     }
+
     private Expr parseMulStartingWith(Expr first) {
         Expr node = parsePowStartingWith(first)
         while (cur.type in [TokenType.Star, TokenType.Slash, TokenType.Mod]) { // <-- додали Mod
@@ -399,11 +533,18 @@ class Parser {
 
     private Expr parsePowStartingWith(Expr first) {
         Expr left = first
-        if (cur.type == TokenType.Pow) { eat(TokenType.Pow); Expr right = parsePow(); return new BinaryExpr(left, "**", right) }
+        if (cur.type == TokenType.Pow) {
+            eat(TokenType.Pow); Expr right = parsePow(); return new BinaryExpr(left, "**", right)
+        }
         return left
     }
 
     private void eat(TokenType t) { if (cur.type != t) throw error("Expected $t, got ${cur.type}"); cur = lx.next() }
-    private String expectIdentifier(String what) { if (cur.type != TokenType.Identifier) throw error("Expected $what, got ${cur.type}"); String s = cur.lexeme; eat(TokenType.Identifier); return s }
+
+    private String expectIdentifier(String what) {
+        if (cur.type != TokenType.Identifier) throw error("Expected $what, got ${cur.type}"); String s = cur.lexeme;
+        eat(TokenType.Identifier); return s
+    }
+
     private RuntimeException error(String msg) { new RuntimeException("Parser error: $msg at pos ${cur.pos}") }
 }
